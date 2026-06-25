@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Terremotos de Venezuela 24 jun 2026 — ArcGIS + GeoJSON (datos en vivo)</title>
+<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css" />
+<script src="https://js.arcgis.com/4.30/"></script>
+<style>
+  html,body { margin:0; padding:0; height:100%; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  #app { display:flex; flex-direction:column; height:100vh; background:#0f1420; color:#e7ecf5; }
+  header { padding:13px 18px; border-bottom:1px solid #2a3550; background:#171e2e; }
+  header h1 { margin:0 0 4px; font-size:17px; }
+  header p { margin:0; color:#9aa6bd; font-size:12.5px; line-height:1.45; }
+  #viewDiv { flex:1; min-height:0; position:relative; }
+  .leg { display:flex; flex-wrap:wrap; gap:14px; margin-top:7px; font-size:12px; color:#9aa6bd; align-items:center; }
+  .leg span { display:flex; align-items:center; }
+  .dot { width:11px; height:11px; border-radius:50%; margin-right:6px; display:inline-block; }
+  #counts { margin-left:auto; font-size:12px; color:#cfd8ec; }
+  #counts b { color:#fff; }
+  .esri-popup__main-container { font-size:13px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Terremotos de Venezuela — 24 de junio de 2026 (M7,2 y M7,5)</h1>
+    <p>Edificios afectados (datos en vivo de <b>terremotovenezuela.com</b>) y epicentros. Renderizado con <b>ArcGIS Maps SDK for JavaScript</b> sobre datos <b>GeoJSON</b>. Reportes ciudadanos/medios marcados como “verificado” por esa plataforma; <b>no</b> es una fuente oficial del Estado.</p>
+    <div class="leg">
+      <span><i class="dot" style="background:#e23b3b"></i>Daño total / colapso</span>
+      <span><i class="dot" style="background:#f5a623"></i>Daño severo</span>
+      <span><i class="dot" style="background:#f5d142"></i>Daño parcial</span>
+      <span><i class="dot" style="background:#7a86ff"></i>Epicentro</span>
+      <span id="counts">Cargando reportes…</span>
+    </div>
+  </header>
+  <div id="viewDiv"></div>
+</div>
+
+<script>
+// ===== Fuente de datos en vivo (Supabase de terremotovenezuela.com) =====
+const SUPA_URL = "https://jckifxsdlnsvbztxydes.supabase.co/rest/v1/buildings";
+const SUPA_KEY = "sb_publishable_i7iEDrCVZcSt0k3RGFrY4g_WrtZBB4w"; // clave publishable (pública)
+
+// ===== Epicentros (USGS) =====
+const epicentrosGeojson = {
+  "type":"FeatureCollection",
+  "features":[
+    { "type":"Feature","geometry":{"type":"Point","coordinates":[-68.5200,10.5000]},
+      "properties":{ "nombre":"Epicentro M7,5 — Yaracuy (SE de Yumare)",
+        "desc":"Sismo principal M7,5 (USGS), ~40 s después del primero. El más fuerte en Venezuela en más de 125 años." } },
+    { "type":"Feature","geometry":{"type":"Point","coordinates":[-68.3900,10.4900]},
+      "properties":{ "nombre":"Epicentro M7,2 — cercanías de Morón",
+        "desc":"Primer sismo M7,2 (USGS), ~21 km al oeste de Morón. Precedió por segundos al evento principal." } }
+  ]
+};
+
+const COL = { total:"#e23b3b", severo:"#f5a623", parcial:"#f5d142" };
+const LABEL = { total:"Daño total / colapso", severo:"Daño severo", parcial:"Daño parcial" };
+
+require([
+  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer",
+  "esri/widgets/Legend","esri/widgets/Expand","esri/widgets/Home","esri/widgets/Search"
+], function(Map, MapView, GeoJSONLayer, Legend, Expand, Home, Search) {
+
+  const blobUrl = (obj) => URL.createObjectURL(new Blob([JSON.stringify(obj)], {type:"application/json"}));
+
+  // ---- Epicentros ----
+  const epiLayer = new GeoJSONLayer({
+    url: blobUrl(epicentrosGeojson), title:"Epicentros (USGS)",
+    renderer:{ type:"simple", symbol:{ type:"simple-marker", color:"#7a86ff", size:15, outline:{color:[11,15,24,0.9],width:1} } },
+    popupTemplate:{ title:"{nombre}", content:"{desc}" }
+  });
+
+  // "satellite" = imagen satelital (World Imagery), sin API key.
+  // Usa "hybrid" si además quieres etiquetas de calles encima de la imagen.
+  const map = new Map({ basemap:"satellite", layers:[epiLayer] });
+  const view = new MapView({ container:"viewDiv", map:map, center:[-67.6,10.52], zoom:8 });
+
+  view.ui.add(new Home({ view: view }), "top-left");
+  view.ui.add(new Expand({ view:view, expanded:false, content:new Legend({ view:view }) }), "bottom-left");
+
+  // ---- Capa en vivo de edificios (Supabase) ----
+  const url = `${SUPA_URL}?select=name,address,city,zone,lat,lng,damage_level,status,general_source,notes&apikey=${SUPA_KEY}`;
+  fetch(url)
+    .then(r => r.json())
+    .then(rows => {
+      const counts = { total:0, severo:0, parcial:0 };
+      const feats = rows.filter(b => b.lat && b.lng).map((b, i) => {
+        if (counts[b.damage_level] !== undefined) counts[b.damage_level]++;
+        return {
+          type:"Feature",
+          geometry:{ type:"Point", coordinates:[b.lng, b.lat] },
+          properties:{
+            OBJECTID:i+1,
+            name:b.name||"(sin nombre)", address:b.address||"", city:b.city||"",
+            zone:b.zone||"", damage_level:b.damage_level||"", status:b.status||"",
+            source:b.general_source||"", notes:b.notes||""
+          }
+        };
+      });
+      const fc = { type:"FeatureCollection", features:feats };
+
+      const edificiosLayer = new GeoJSONLayer({
+        url: blobUrl(fc),
+        title:"Edificios reportados (terremotovenezuela.com)",
+        objectIdField:"OBJECTID",
+        renderer:{ type:"unique-value", field:"damage_level", uniqueValueInfos:[
+          { value:"total",   label:LABEL.total,   symbol:{type:"simple-marker",color:COL.total,  size:9, outline:{color:[11,15,24,.9],width:1}} },
+          { value:"severo",  label:LABEL.severo,  symbol:{type:"simple-marker",color:COL.severo, size:8, outline:{color:[11,15,24,.9],width:1}} },
+          { value:"parcial", label:LABEL.parcial, symbol:{type:"simple-marker",color:COL.parcial,size:7, outline:{color:[11,15,24,.9],width:1}} }
+        ]},
+        popupTemplate:{
+          title:"{name}",
+          content:[
+            { type:"fields", fieldInfos:[
+              { fieldName:"damage_level", label:"Nivel de daño" },
+              { fieldName:"address", label:"Dirección" },
+              { fieldName:"zone", label:"Zona/parroquia" },
+              { fieldName:"city", label:"Ciudad" },
+              { fieldName:"status", label:"Estado" },
+              { fieldName:"source", label:"Fuente" }
+            ]},
+            { type:"text", text:"{notes}" }
+          ]
+        }
+      });
+      map.add(edificiosLayer);
+
+      // Buscador por nombre/dirección sobre la capa en vivo
+      view.ui.add(new Expand({ view:view, expanded:false, expandTooltip:"Buscar edificio",
+        content:new Search({ view:view, includeDefaultSources:false, sources:[{
+          layer: edificiosLayer, searchFields:["name","address"], displayField:"name",
+          exactMatch:false, outFields:["*"], name:"Edificios", placeholder:"Buscar edificio o dirección"
+        }] }) }), "top-right");
+
+      document.getElementById("counts").innerHTML =
+        `<b>${feats.length}</b> edificios · ${counts.total} totales · ${counts.severo} severos · ${counts.parcial} parciales`;
+
+      edificiosLayer.when(() => edificiosLayer.queryExtent().then(res => {
+        if (res.extent) view.goTo(res.extent.expand(1.3));
+      }));
+    })
+    .catch(err => {
+      document.getElementById("counts").textContent = "No se pudieron cargar los reportes en vivo.";
+      console.error("Error cargando Supabase:", err);
+    });
+});
+</script>
+</body>
+</html>
