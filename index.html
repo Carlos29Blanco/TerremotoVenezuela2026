@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Terremotos de Venezuela 24 jun 2026 (datos en vivo)</title>
+<title>Terremotos de Venezuela 24 jun 2026 — ArcGIS + GeoJSON (datos en vivo)</title>
 <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css" />
 <script src="https://js.arcgis.com/4.30/"></script>
 <style>
@@ -25,7 +25,7 @@
 <div id="app">
   <header>
     <h1>Terremotos de Venezuela — 24 de junio de 2026 (M7,2 y M7,5)</h1>
-    <p>Edificios afectados (datos en vivo de <b>terremotovenezuela.com</b>) y epicentros. Reportes ciudadanos/medios marcados como “verificado” por esa plataforma; <b>no</b> es una fuente oficial del Estado.</p>
+    <p>Edificios afectados (datos en vivo de <b>terremotovenezuela.com</b>) y epicentros. Renderizado con <b>ArcGIS Maps SDK for JavaScript</b>. Reportes ciudadanos/medios marcados como “verificado” por esa plataforma; <b>no</b> es una fuente oficial del Estado.</p>
     <div class="leg">
       <span><i class="dot" style="background:#e23b3b"></i>Daño total / colapso</span>
       <span><i class="dot" style="background:#f5a623"></i>Daño severo</span>
@@ -74,7 +74,7 @@ require([
 
   // "satellite" = imagen satelital (World Imagery), sin API key.
   // Usa "hybrid" si además quieres etiquetas de calles encima de la imagen.
-  const map = new Map({ basemap:"hybrid", layers:[epiLayer] });
+  const map = new Map({ basemap:"satellite", layers:[epiLayer] });
   const view = new MapView({ container:"viewDiv", map:map, center:[-67.6,10.52], zoom:8 });
 
   view.ui.add(new Home({ view: view }), "top-left");
@@ -85,6 +85,8 @@ require([
   fetch(url)
     .then(r => r.json())
     .then(rows => {
+      const countsAll = { total:0, severo:0, parcial:0 };
+      rows.forEach(b => { if (countsAll[b.damage_level] !== undefined) countsAll[b.damage_level]++; });
       const counts = { total:0, severo:0, parcial:0 };
       const feats = rows.filter(b => b.lat && b.lng).map((b, i) => {
         if (counts[b.damage_level] !== undefined) counts[b.damage_level]++;
@@ -134,8 +136,12 @@ require([
           exactMatch:false, outFields:["*"], name:"Edificios", placeholder:"Buscar edificio o dirección"
         }] }) }), "top-right");
 
+      const totalReportes = rows.length;
+      const sinCoords = totalReportes - feats.length;
       document.getElementById("counts").innerHTML =
-        `<b>${feats.length}</b>. edificios · ${counts.total} totales · ${counts.severo} severos · ${counts.parcial} parciales`;
+        `<b>${feats.length}</b>&nbsp; de ${totalReportes} reportes en el mapa · ` +
+        `Totales ${counts.total}/${countsAll.total} · Severos ${counts.severo}/${countsAll.severo} · Parciales ${counts.parcial}/${countsAll.parcial}` +
+        (sinCoords ? ` · ${sinCoords} sin coordenadas` : "");
 
       edificiosLayer.when(() => edificiosLayer.queryExtent().then(res => {
         if (res.extent) view.goTo(res.extent.expand(1.3));
