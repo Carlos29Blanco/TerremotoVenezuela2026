@@ -74,7 +74,7 @@ require([
 
   // "satellite" = imagen satelital (World Imagery), sin API key.
   // Usa "hybrid" si además quieres etiquetas de calles encima de la imagen.
-  const map = new Map({ basemap:"satellite", layers:[epiLayer] });
+  const map = new Map({ basemap:"hybrid", layers:[epiLayer] });
   const view = new MapView({ container:"viewDiv", map:map, center:[-67.6,10.52], zoom:8 });
 
   view.ui.add(new Home({ view: view }), "top-left");
