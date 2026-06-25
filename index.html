@@ -135,7 +135,7 @@ require([
         }] }) }), "top-right");
 
       document.getElementById("counts").innerHTML =
-        `<b>${feats.length}</b> edificios · ${counts.total} totales · ${counts.severo} severos · ${counts.parcial} parciales`;
+        `<b>${feats.length}</b>. edificios · ${counts.total} totales · ${counts.severo} severos · ${counts.parcial} parciales`;
 
       edificiosLayer.when(() => edificiosLayer.queryExtent().then(res => {
         if (res.extent) view.goTo(res.extent.expand(1.3));
