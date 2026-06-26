@@ -61,8 +61,8 @@ const LABEL = { total:"Daño total / colapso", severo:"Daño severo", parcial:"D
 
 require([
   "esri/Map","esri/views/SceneView","esri/layers/SceneLayer","esri/layers/GeoJSONLayer",
-  "esri/widgets/Legend","esri/widgets/Expand","esri/widgets/Home","esri/widgets/Search","esri/widgets/LayerList"
-], function(Map, SceneView, SceneLayer, GeoJSONLayer, Legend, Expand, Home, Search, LayerList) {
+  "esri/widgets/Legend","esri/widgets/Expand","esri/widgets/Home","esri/widgets/Search","esri/widgets/LayerList","esri/widgets/Locate"
+], function(Map, SceneView, SceneLayer, GeoJSONLayer, Legend, Expand, Home, Search, LayerList, Locate) {
 
   const blobUrl = (obj) => URL.createObjectURL(new Blob([JSON.stringify(obj)], {type:"application/json"}));
 
@@ -86,6 +86,12 @@ require([
   });
 
   view.ui.add(new Home({ view: view }), "top-left");
+  // ---- Mi ubicación (GPS) para personas en sitio ----
+  view.ui.add(new Locate({
+    view: view,
+    useHeadingEnabled: false,   // no rota la escena al ubicar
+    goToOverride: function(v, opts){ opts.target.scale = 2000; return v.goTo(opts.target); }
+  }), "top-left");
   view.ui.add(new Expand({ view:view, expanded:false, content:new Legend({ view:view }) }), "bottom-left");
 
   // ---- Widget de capas (LayerList) ----
