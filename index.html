@@ -25,7 +25,7 @@
 <div id="app">
   <header>
     <h1>Escena 3D — Terremotos de Venezuela (24 jun 2026)</h1>
-    <p>Edificios afectados (datos en vivo de <b>terremotovenezuela.com</b>) sobre los <b>OpenStreetMap 3D Buildings de Esri</b>. Los marcadores flotan sobre cada edificio reportado. Nota: los edificios 3D son <b>previos al sismo</b> (OSM), así que los colapsados siguen apareciendo en pie.</p>
+    <p>Edificios afectados (datos en vivo de <b>terremotovenezuela.com creado por mariangelli Alvarez @mariangelli</b>) sobre los <b>OpenStreetMap 3D Buildings de Esri</b>. Los marcadores flotan sobre cada edificio reportado. Nota: los edificios 3D son <b>previos al sismo</b> (OSM), así que los colapsados siguen apareciendo en pie.</p>
     <div class="leg">
       <span><i class="dot" style="background:#e23b3b"></i>Daño total / colapso</span>
       <span><i class="dot" style="background:#f5a623"></i>Daño severo</span>
@@ -61,8 +61,8 @@ const LABEL = { total:"Daño total / colapso", severo:"Daño severo", parcial:"D
 
 require([
   "esri/Map","esri/views/SceneView","esri/layers/SceneLayer","esri/layers/GeoJSONLayer",
-  "esri/widgets/Legend","esri/widgets/Expand","esri/widgets/Home","esri/widgets/Search"
-], function(Map, SceneView, SceneLayer, GeoJSONLayer, Legend, Expand, Home, Search) {
+  "esri/widgets/Legend","esri/widgets/Expand","esri/widgets/Home","esri/widgets/Search","esri/widgets/LayerList"
+], function(Map, SceneView, SceneLayer, GeoJSONLayer, Legend, Expand, Home, Search, LayerList) {
 
   const blobUrl = (obj) => URL.createObjectURL(new Blob([JSON.stringify(obj)], {type:"application/json"}));
 
@@ -80,11 +80,29 @@ require([
     container: "viewDiv",
     map: map,
     qualityProfile: "high",
-    camera: { position:[-66.872, 10.455, 2600], tilt:62, heading:22 } // sobre el este de Caracas
+    // Vista sobre el mar al NO del aeropuerto, mirando al ESE:
+    // Maiquetía en primer plano, litoral de La Guaira al fondo izq. y Caracas al fondo der.
+    camera: { position:[-67.15, 10.62, 2800], tilt:80, heading:111 }
   });
 
   view.ui.add(new Home({ view: view }), "top-left");
   view.ui.add(new Expand({ view:view, expanded:false, content:new Legend({ view:view }) }), "bottom-left");
+
+  // ---- Widget de capas (LayerList) ----
+  view.ui.add(new Expand({
+    view:view, expanded:false, expandTooltip:"Capas",
+    content:new LayerList({ view:view })
+  }), "top-left");
+
+  // ---- Atajo para afinar el encuadre: pulsa "c" para ver/copiar la cámara actual ----
+  view.on("key-down", (e) => {
+    if (e.key === "c" || e.key === "C") {
+      const c = view.camera;
+      const txt = `camera: { position:[${c.position.longitude.toFixed(4)}, ${c.position.latitude.toFixed(4)}, ${Math.round(c.position.z)}], tilt:${Math.round(c.tilt)}, heading:${Math.round(c.heading)} }`;
+      console.log(txt);
+      try { navigator.clipboard.writeText(txt); } catch(_) {}
+    }
+  });
 
   // ---- Epicentros (3D, sobre el terreno) ----
   const epiLayer = new GeoJSONLayer({
@@ -157,11 +175,18 @@ require([
       });
       map.add(edificiosLayer);
 
-      view.ui.add(new Expand({ view:view, expanded:false, expandTooltip:"Buscar edificio",
-        content:new Search({ view:view, includeDefaultSources:false, sources:[{
+      // Geolocalizador: geocodificador mundial de Esri + búsqueda en la capa de edificios
+      view.ui.add(new Search({
+        view: view,
+        includeDefaultSources: true,                 // direcciones/lugares (World Geocoder)
+        popupEnabled: true,
+        allPlaceholder: "Buscar dirección, lugar o edificio",
+        sources: [{
           layer: edificiosLayer, searchFields:["name","address"], displayField:"name",
-          exactMatch:false, outFields:["*"], name:"Edificios", placeholder:"Buscar edificio o dirección"
-        }] }) }), "top-right");
+          exactMatch:false, outFields:["*"], name:"Edificios afectados",
+          placeholder:"Buscar edificio reportado"
+        }]
+      }), "top-right");
 
       const totalReportes = rows.length;
       const sinCoords = totalReportes - feats.length;
