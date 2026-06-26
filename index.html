@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Terremotos de Venezuela 24 jun 2026 — ArcGIS + GeoJSON (datos en vivo)</title>
+<title>Escena 3D — Terremotos de Venezuela 24 jun 2026 (Esri 3D Buildings)</title>
 <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css" />
 <script src="https://js.arcgis.com/4.30/"></script>
 <style>
@@ -24,8 +24,8 @@
 <body>
 <div id="app">
   <header>
-    <h1>Terremotos de Venezuela — 24 de junio de 2026 (M7,2 y M7,5)</h1>
-    <p>Edificios afectados (datos en vivo de <b>https://terremotovenezuela.com Creado por @mariangelli</b>) y epicentros. Renderizado con <b>ArcGIS Maps SDK for JavaScript</b>. Reportes ciudadanos/medios marcados como “verificado” por esa plataforma; <b>no</b> es una fuente oficial del Estado.</p>
+    <h1>Escena 3D — Terremotos de Venezuela (24 jun 2026)</h1>
+    <p>Edificios afectados (datos en vivo de <b>terremotovenezuela.com</b>) sobre los <b>OpenStreetMap 3D Buildings de Esri</b>. Los marcadores flotan sobre cada edificio reportado. Nota: los edificios 3D son <b>previos al sismo</b> (OSM), así que los colapsados siguen apareciendo en pie.</p>
     <div class="leg">
       <span><i class="dot" style="background:#e23b3b"></i>Daño total / colapso</span>
       <span><i class="dot" style="background:#f5a623"></i>Daño severo</span>
@@ -38,11 +38,12 @@
 </div>
 
 <script>
-// ===== Fuente de datos en vivo (Supabase de terremotovenezuela.com) =====
 const SUPA_URL = "https://jckifxsdlnsvbztxydes.supabase.co/rest/v1/buildings";
 const SUPA_KEY = "sb_publishable_i7iEDrCVZcSt0k3RGFrY4g_WrtZBB4w"; // clave publishable (pública)
 
-// ===== Epicentros (USGS) =====
+// Capa pública de edificios 3D de Esri (OSM, sin API key)
+const OSM3D_URL = "https://basemaps3d.arcgis.com/arcgis/rest/services/OpenStreetMap3D_Buildings_v1/SceneServer";
+
 const epicentrosGeojson = {
   "type":"FeatureCollection",
   "features":[
@@ -59,26 +60,52 @@ const COL = { total:"#e23b3b", severo:"#f5a623", parcial:"#f5d142" };
 const LABEL = { total:"Daño total / colapso", severo:"Daño severo", parcial:"Daño parcial" };
 
 require([
-  "esri/Map","esri/views/MapView","esri/layers/GeoJSONLayer",
+  "esri/Map","esri/views/SceneView","esri/layers/SceneLayer","esri/layers/GeoJSONLayer",
   "esri/widgets/Legend","esri/widgets/Expand","esri/widgets/Home","esri/widgets/Search"
-], function(Map, MapView, GeoJSONLayer, Legend, Expand, Home, Search) {
+], function(Map, SceneView, SceneLayer, GeoJSONLayer, Legend, Expand, Home, Search) {
 
   const blobUrl = (obj) => URL.createObjectURL(new Blob([JSON.stringify(obj)], {type:"application/json"}));
 
-  // ---- Epicentros ----
-  const epiLayer = new GeoJSONLayer({
-    url: blobUrl(epicentrosGeojson), title:"Epicentros (USGS)",
-    renderer:{ type:"simple", symbol:{ type:"simple-marker", color:"#7a86ff", size:15, outline:{color:[11,15,24,0.9],width:1} } },
-    popupTemplate:{ title:"{nombre}", content:"{desc}" }
+  // ---- Edificios 3D de Esri (OSM) ----
+  const osmBuildings = new SceneLayer({ url: OSM3D_URL, title:"OpenStreetMap 3D Buildings (Esri)" });
+
+  // ---- Mapa/escena: satélite + relieve mundial + edificios 3D ----
+  const map = new Map({
+    basemap: "satellite",
+    ground: "world-elevation",
+    layers: [osmBuildings]
   });
 
-  // "satellite" = imagen satelital (World Imagery), sin API key.
-  // Usa "hybrid" si además quieres etiquetas de calles encima de la imagen.
-  const map = new Map({ basemap:"satellite", layers:[epiLayer] });
-  const view = new MapView({ container:"viewDiv", map:map, center:[-67.6,10.52], zoom:8 });
+  const view = new SceneView({
+    container: "viewDiv",
+    map: map,
+    qualityProfile: "high",
+    camera: { position:[-66.872, 10.455, 2600], tilt:62, heading:22 } // sobre el este de Caracas
+  });
 
   view.ui.add(new Home({ view: view }), "top-left");
   view.ui.add(new Expand({ view:view, expanded:false, content:new Legend({ view:view }) }), "bottom-left");
+
+  // ---- Epicentros (3D, sobre el terreno) ----
+  const epiLayer = new GeoJSONLayer({
+    url: blobUrl(epicentrosGeojson), title:"Epicentros (USGS)",
+    elevationInfo:{ mode:"on-the-ground" },
+    renderer:{ type:"simple", symbol:{ type:"point-3d", symbolLayers:[{
+      type:"icon", resource:{primitive:"circle"}, material:{color:"#7a86ff"}, outline:{color:"white",size:1}, size:18
+    }], verticalOffset:{ screenLength:30, maxWorldLength:5000, minWorldLength:200 }, callout:{ type:"line", size:1.5, color:[255,255,255,0.6] } } },
+    popupTemplate:{ title:"{nombre}", content:"{desc}" }
+  });
+  map.add(epiLayer);
+
+  // ---- Pin 3D flotante por nivel de daño ----
+  function pin(color, sz){
+    return {
+      type:"point-3d",
+      symbolLayers:[{ type:"icon", resource:{primitive:"circle"}, material:{color}, outline:{color:"white",size:1.2}, size:sz }],
+      verticalOffset:{ screenLength:18, maxWorldLength:250, minWorldLength:15 },
+      callout:{ type:"line", size:1.3, color:[255,255,255,0.7], border:{color:[0,0,0,0.4]} }
+    };
+  }
 
   // ---- Capa en vivo de edificios (Supabase) ----
   const url = `${SUPA_URL}?select=name,address,city,zone,lat,lng,damage_level,status,general_source,notes&apikey=${SUPA_KEY}`;
@@ -107,10 +134,11 @@ require([
         url: blobUrl(fc),
         title:"Edificios reportados (terremotovenezuela.com)",
         objectIdField:"OBJECTID",
+        elevationInfo:{ mode:"relative-to-scene" }, // se apoya sobre el techo del edificio 3D
         renderer:{ type:"unique-value", field:"damage_level", uniqueValueInfos:[
-          { value:"total",   label:LABEL.total,   symbol:{type:"simple-marker",color:COL.total,  size:9, outline:{color:[11,15,24,.9],width:1}} },
-          { value:"severo",  label:LABEL.severo,  symbol:{type:"simple-marker",color:COL.severo, size:8, outline:{color:[11,15,24,.9],width:1}} },
-          { value:"parcial", label:LABEL.parcial, symbol:{type:"simple-marker",color:COL.parcial,size:7, outline:{color:[11,15,24,.9],width:1}} }
+          { value:"total",   label:LABEL.total,   symbol: pin(COL.total, 13) },
+          { value:"severo",  label:LABEL.severo,  symbol: pin(COL.severo, 12) },
+          { value:"parcial", label:LABEL.parcial, symbol: pin(COL.parcial, 11) }
         ]},
         popupTemplate:{
           title:"{name}",
@@ -129,7 +157,6 @@ require([
       });
       map.add(edificiosLayer);
 
-      // Buscador por nombre/dirección sobre la capa en vivo
       view.ui.add(new Expand({ view:view, expanded:false, expandTooltip:"Buscar edificio",
         content:new Search({ view:view, includeDefaultSources:false, sources:[{
           layer: edificiosLayer, searchFields:["name","address"], displayField:"name",
@@ -139,13 +166,9 @@ require([
       const totalReportes = rows.length;
       const sinCoords = totalReportes - feats.length;
       document.getElementById("counts").innerHTML =
-        `<b>${feats.length}</b>&nbsp; de ${totalReportes} reportes en el mapa · ` +
+        `<b>${feats.length}</b>&nbsp;de ${totalReportes} reportes en la escena · ` +
         `Totales ${counts.total}/${countsAll.total} · Severos ${counts.severo}/${countsAll.severo} · Parciales ${counts.parcial}/${countsAll.parcial}` +
         (sinCoords ? ` · ${sinCoords} sin coordenadas` : "");
-
-      edificiosLayer.when(() => edificiosLayer.queryExtent().then(res => {
-        if (res.extent) view.goTo(res.extent.expand(1.3));
-      }));
     })
     .catch(err => {
       document.getElementById("counts").textContent = "No se pudieron cargar los reportes en vivo.";
